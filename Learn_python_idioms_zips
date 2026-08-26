@@ -1,0 +1,759 @@
+# Python Idioms and Memory: Revision Notes
+
+These notes review:
+
+- Mutable default arguments
+- Object aliasing and copying
+- Comprehensions
+- `enumerate()`
+- `zip()`
+- Practical examples from Week 1
+
+---
+
+## 1. Mutable Default Arguments
+
+### The bug
+
+```python
+def add_task(task, tasks=[]):
+    tasks.append(task)
+    return tasks
+
+work = add_task("Email professor")
+personal = add_task("Buy groceries")
+
+print(work)
+print(personal)
+```
+
+Actual output:
+
+```text
+['Email professor', 'Buy groceries']
+['Email professor', 'Buy groceries']
+```
+
+### Why it happens
+
+Python creates the default list once, when it executes the function definition.
+It does **not** create a new default list for every function call.
+
+```text
+Function definition executes:
+default tasks ──► []
+
+First call:
+work ───────────┐
+default tasks ──┴──► ["Email professor"]
+
+Second call:
+work ───────────┐
+personal ───────┼──► ["Email professor", "Buy groceries"]
+default tasks ──┘
+```
+
+The variables are different names, but they point to the same list object.
+
+### Safe `None` idiom
+
+```python
+def add_task(task, tasks=None):
+    if tasks is None:
+        tasks = []
+
+    tasks.append(task)
+    return tasks
+```
+
+When the caller does not provide `tasks`, the function creates a new list at runtime.
+
+### Rule
+
+Avoid mutable default values such as:
+
+```python
+def function(items=[]):       # unsafe
+def function(options={}):     # unsafe
+def function(values=set()):   # unsafe
+```
+
+Use `None`, then create the mutable object inside the function.
+
+---
+
+## 2. Object Aliasing
+
+Aliasing means two or more variables point to the same object.
+
+```python
+box_a = ["book"]
+box_b = box_a
+box_b.append("laptop")
+```
+
+Result:
+
+```python
+box_a == ["book", "laptop"]
+box_b == ["book", "laptop"]
+box_a is box_b  # True
+```
+
+Assignment does not copy the list. It gives the same object another name.
+
+```text
+box_a ──┐
+        ├──► ["book", "laptop"]
+box_b ──┘
+```
+
+### Equality versus identity
+
+```python
+a == b  # Do the objects contain equal values?
+a is b  # Are both names pointing to the exact same object?
+```
+
+### Creating a shallow copy
+
+```python
+box_a = ["book"]
+box_b = box_a.copy()
+
+# Equivalent for a list:
+box_b = box_a[:]
+```
+
+Now the outer lists are separate:
+
+```python
+box_a is box_b  # False
+```
+
+### Shallow-copy gotcha
+
+```python
+a = [["book"]]
+b = a[:]
+b[0].append("laptop")
+```
+
+Results:
+
+```python
+a == [["book", "laptop"]]
+b == [["book", "laptop"]]
+
+a is b        # False: different outer lists
+a[0] is b[0]  # True: shared inner list
+```
+
+A shallow copy creates a new outer container but continues sharing nested objects.
+
+### Mutation versus rebinding
+
+Mutation changes an existing object:
+
+```python
+b[0].append("laptop")
+```
+
+Rebinding replaces one reference:
+
+```python
+a = [["book"]]
+b = a[:]
+b[0] = ["phone"]
+
+print(a)  # [["book"]]
+print(b)  # [["phone"]]
+```
+
+`b[0] = ["phone"]` makes that slot in `b` point to a new list. It does not modify the old inner list.
+
+### Safe function that does not mutate caller data
+
+```python
+def add_item(item, inventory=None):
+    if inventory is None:
+        inventory = []
+    else:
+        inventory = inventory.copy()
+
+    inventory.append(item)
+    return inventory
+```
+
+Example:
+
+```python
+starter = ["potion"]
+
+first = add_item("map", starter)
+second = add_item("sword")
+
+print(starter)  # ['potion']
+print(first)    # ['potion', 'map']
+print(second)   # ['sword']
+```
+
+---
+
+## 3. Comprehensions
+
+### Core purpose
+
+Use a comprehension when the goal is to build a new collection from an iterable.
+
+Do not use a comprehension merely to make code shorter.
+
+### Main patterns
+
+#### List comprehension
+
+```python
+[value for item in collection if condition]
+```
+
+#### Set comprehension
+
+```python
+{value for item in collection if condition}
+```
+
+#### Dictionary comprehension
+
+```python
+{key: value for item in collection if condition}
+```
+
+### From a normal loop to a comprehension
+
+Normal loop:
+
+```python
+result = []
+
+for number in numbers:
+    if number > 0:
+        result.append(number**2)
+```
+
+List comprehension:
+
+```python
+result = [number**2 for number in numbers if number > 0]
+```
+
+Read it as:
+
+```text
+number**2               → value placed in the result
+for number in numbers   → iteration
+if number > 0           → filter
+```
+
+### Filtering
+
+```python
+words = ["cat", "elephant", "dog", "tiger"]
+
+long_words = [word for word in words if len(word) > 3]
+```
+
+Result:
+
+```python
+["elephant", "tiger"]
+```
+
+### Filtering and transforming
+
+```python
+uppercase_long_words = [
+    word.upper()
+    for word in words
+    if len(word) > 3
+]
+```
+
+Result:
+
+```python
+["ELEPHANT", "TIGER"]
+```
+
+Python strings use `.upper()`, not `.uppercase()`.
+
+### Set comprehension
+
+```python
+numbers = [1, 2, 2, 3, 4, 4]
+evens = {number for number in numbers if number % 2 == 0}
+```
+
+Result:
+
+```python
+{2, 4}
+```
+
+Repeated values disappear because a set stores distinct values.
+
+### Dictionary comprehension
+
+```python
+words = ["cat", "elephant", "dog"]
+lengths = {word: len(word) for word in words}
+```
+
+Result:
+
+```python
+{"cat": 3, "elephant": 8, "dog": 3}
+```
+
+The colon separates each dictionary key from its value.
+
+### When not to use a comprehension
+
+Prefer a normal loop when you need to:
+
+- return immediately
+- `break` out of the loop
+- perform several operations during each iteration
+- update unrelated state
+- handle complex branching
+
+Comprehensions build collections. They do not support statements such as `return` or `break` inside them.
+
+Invalid:
+
+```python
+result = return index for index, value in enumerate(s)
+```
+
+Valid collection-building syntax:
+
+```python
+result = [index for index, value in enumerate(s)]
+```
+
+### Decision rule
+
+Ask:
+
+> Am I building a new list, set, or dictionary containing multiple results?
+
+- Yes: consider a comprehension.
+- No, or I must stop early: use a regular loop.
+
+---
+
+## 4. Week-1 Rewrite: Intersection of Two Arrays
+
+### Normal-loop solution
+
+```python
+def intersection(nums1, nums2):
+    lookup = set(nums1)
+    result = set()
+
+    for number in nums2:
+        if number in lookup:
+            result.add(number)
+
+    return list(result)
+```
+
+### Set-comprehension solution
+
+```python
+def intersection(nums1, nums2):
+    lookup = set(nums1)
+    result = {number for number in nums2 if number in lookup}
+    return list(result)
+```
+
+Why a set comprehension fits:
+
+- We are building a collection.
+- We want distinct answers.
+- We are filtering `nums2` using membership in `lookup`.
+
+Complexity:
+
+- Time: `O(n + m)`
+- Space: `O(n + m)` in the worst case
+
+---
+
+## 5. `enumerate()`
+
+Use `enumerate()` when you need both an element and its index.
+
+Instead of:
+
+```python
+for index in range(len(words)):
+    word = words[index]
+    print(index, word)
+```
+
+Prefer:
+
+```python
+for index, word in enumerate(words):
+    print(index, word)
+```
+
+Conceptually:
+
+```python
+words = ["cat", "elephant", "dog"]
+
+# enumerate(words) produces:
+(0, "cat")
+(1, "elephant")
+(2, "dog")
+```
+
+The variables unpack each pair:
+
+```python
+index, word = (0, "cat")
+```
+
+### Week-1 Rewrite: First Unique Character
+
+```python
+from collections import Counter
+
+def first_unique_character(s):
+    count = Counter(s)
+
+    for index, value in enumerate(s):
+        if count[value] == 1:
+            return index
+
+    return -1
+```
+
+Why this is a normal loop:
+
+- `Counter` provides frequency, not original position.
+- `enumerate(s)` provides the index and character.
+- We must return immediately when the first unique character is found.
+
+Keep `return -1` after the loop. Placing it inside the loop would give up after checking only the first character.
+
+### Common spelling bug
+
+```python
+for index, vlaue in enumerate(s):
+    if count[value] == 1:
+```
+
+`vlaue` and `value` are different variable names. This raises `NameError`.
+
+---
+
+## 6. `zip()`
+
+Use `zip()` when multiple collections contain corresponding values.
+
+```python
+names = ["Arif", "Maya", "Leo"]
+grades = ["A", "B", "A"]
+
+for name, grade in zip(names, grades):
+    print(name, grade)
+```
+
+Conceptually:
+
+```text
+("Arif", "A")
+("Maya", "B")
+("Leo", "A")
+```
+
+### `enumerate()` versus `zip()`
+
+| Tool | What it pairs |
+|---|---|
+| `enumerate(items)` | Generated index + element |
+| `zip(a, b)` | Existing element from `a` + existing element from `b` |
+
+### Dictionary comprehension with `zip()`
+
+```python
+students = ["Arif", "Maya", "Leo"]
+grades = ["A", "B", "A"]
+
+grade_map = {
+    student: grade
+    for student, grade in zip(students, grades)
+}
+```
+
+Result:
+
+```python
+{
+    "Arif": "A",
+    "Maya": "B",
+    "Leo": "A"
+}
+```
+
+Short equivalent:
+
+```python
+grade_map = dict(zip(students, grades))
+```
+
+Variable names cannot contain spaces:
+
+```python
+grade map = {}  # invalid
+grade_map = {}  # valid
+```
+
+### Unequal-length gotcha
+
+```python
+products = ["laptop", "phone", "tablet"]
+prices = [1200, 800]
+
+for product, price in zip(products, prices):
+    print(product, price)
+```
+
+Output:
+
+```text
+laptop 1200
+phone 800
+```
+
+Ordinary `zip()` stops when the shortest collection is exhausted. `"tablet"` is ignored.
+
+If unequal lengths should be considered an error:
+
+```python
+for product, price in zip(products, prices, strict=True):
+    print(product, price)
+```
+
+This raises `ValueError` when the lengths differ.
+
+---
+
+## 7. Final Selection Guide
+
+| Goal | Preferred tool |
+|---|---|
+| Build a new list | List comprehension |
+| Build a collection of distinct values | Set comprehension |
+| Build key-value mappings | Dictionary comprehension |
+| Access an element and its index | `enumerate()` |
+| Pair values from multiple collections | `zip()` |
+| Stop or return on the first match | Normal loop |
+| Perform several actions per iteration | Normal loop |
+
+---
+
+## 8. Self-Test
+
+### Question 1
+
+What is unsafe about this function?
+
+```python
+def save_name(name, names=[]):
+    names.append(name)
+    return names
+```
+
+### Question 2
+
+Predict the output:
+
+```python
+a = [1, 2]
+b = a
+b.append(3)
+
+print(a)
+print(a is b)
+```
+
+### Question 3
+
+Predict both identity checks:
+
+```python
+a = [[1]]
+b = a.copy()
+
+print(a is b)
+print(a[0] is b[0])
+```
+
+### Question 4
+
+Write a list comprehension containing the squares of all positive numbers:
+
+```python
+numbers = [-2, -1, 0, 1, 2, 3]
+```
+
+Expected result:
+
+```python
+[1, 4, 9]
+```
+
+### Question 5
+
+Write a set comprehension containing the distinct odd numbers:
+
+```python
+numbers = [1, 1, 2, 3, 3, 4, 5]
+```
+
+### Question 6
+
+Why is a regular loop better than a comprehension when searching for the first matching item?
+
+### Question 7
+
+Use `enumerate()` to print every character and its index:
+
+```python
+word = "python"
+```
+
+### Question 8
+
+Use `zip()` to create a dictionary:
+
+```python
+keys = ["a", "b", "c"]
+values = [10, 20, 30]
+```
+
+### Question 9
+
+What happens when ordinary `zip()` receives collections with different lengths?
+
+### Question 10
+
+Fix this function so it neither shares a default list nor mutates a caller-provided list:
+
+```python
+def add_permission(permission, permissions=[]):
+    permissions.append(permission)
+    return permissions
+```
+
+---
+
+## 9. Answers
+
+<details>
+<summary>Open after completing the self-test</summary>
+
+### Answer 1
+
+The default list is created once at function-definition time and is shared by calls that omit `names`.
+
+### Answer 2
+
+```text
+[1, 2, 3]
+True
+```
+
+### Answer 3
+
+```text
+False
+True
+```
+
+The outer lists differ, but the nested list is shared.
+
+### Answer 4
+
+```python
+squares = [number**2 for number in numbers if number > 0]
+```
+
+### Answer 5
+
+```python
+odds = {number for number in numbers if number % 2 != 0}
+```
+
+### Answer 6
+
+A normal loop can `return` or `break` immediately. A comprehension constructs an entire collection.
+
+### Answer 7
+
+```python
+for index, character in enumerate(word):
+    print(index, character)
+```
+
+### Answer 8
+
+```python
+mapping = {key: value for key, value in zip(keys, values)}
+```
+
+Or:
+
+```python
+mapping = dict(zip(keys, values))
+```
+
+### Answer 9
+
+It stops at the shortest collection and ignores unmatched elements from longer collections.
+
+### Answer 10
+
+```python
+def add_permission(permission, permissions=None):
+    if permissions is None:
+        permissions = []
+    else:
+        permissions = permissions.copy()
+
+    permissions.append(permission)
+    return permissions
+```
+
+</details>
+
+---
+
+## 10. Rapid Recall
+
+Complete these from memory:
+
+1. Mutable default arguments are created at function __________ time.
+2. Assignment usually copies an object __________, not the object itself.
+3. `is` checks object __________.
+4. A shallow copy creates a new __________ container but may share nested objects.
+5. Use a comprehension to build a new __________.
+6. Use `enumerate()` when you need the element and its __________.
+7. Use `zip()` to pair values from multiple __________.
+8. Ordinary `zip()` stops at the __________ collection.
+9. Use a normal loop when you must return on the __________ match.
+10. An empty set is written as `__________`, because `{}` creates a dictionary.
+
